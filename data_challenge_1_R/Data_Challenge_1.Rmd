@@ -1,0 +1,120 @@
+---
+title: "Data Challenge: Individual Data Visualization Artwork"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+options(width = 1000)
+```
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+sba <- read_csv("https://uofi.box.com/shared/static/vi37omgitiaa2yyplrom779qvwk1g14x.csv", 
+                                             col_types = cols(ApprovalDate = col_date(format = "%d-%b-%y"), 
+                                                              BalanceGross = col_number(), ChgOffDate = col_date(format = "%d-%b-%y"), 
+                                                              ChgOffPrinGr = col_number(), DisbursementDate = col_date(format = "%d-%b-%y"), 
+                                                              DisbursementGross = col_number(), 
+                                                              ApprovalFY = col_integer(),
+                                                              GrAppv = col_number(), SBA_Appv = col_number()))
+```
+
+
+```{r}
+illinois_sba <- filter(sba, State == "IL")
+dim(sba)
+dim(illinois_sba)
+```
+
+```{r}
+illinois_sba$approval_difference <- illinois_sba$GrAppv - illinois_sba$SBA_Appv
+```
+
+```{r}
+#Deafault rate for all businesses in IL
+default_all_il <- sum(illinois_sba$MIS_Status=="CHGOFF", na.rm=TRUE)/dim(illinois_sba)[1]
+
+#Default rates for the bank being in and out of state
+bank_not_in_state <- sum(illinois_sba$BankState[illinois_sba$MIS_Status=="CHGOFF"]!="IL", na.rm=TRUE)/sum(illinois_sba$BankState!="IL",na.rm=TRUE)
+bank_in_state <- sum(illinois_sba$BankState[illinois_sba$MIS_Status=="CHGOFF"]=="IL", na.rm=TRUE)/sum(illinois_sba$BankState=="IL",na.rm=TRUE)
+
+#Deafult rates for businesses with a small number of employees (<5) and large number of employees (>=5)
+emps_small <- sum(subset(illinois_sba, NoEmp < 5)$MIS_Status=="CHGOFF",na.rm=TRUE)/dim(subset(illinois_sba, NoEmp < 5))[1]
+emps_larger <-  sum(subset(illinois_sba, NoEmp >= 5)$MIS_Status=="CHGOFF",na.rm=TRUE)/dim(subset(illinois_sba, NoEmp >= 5))[1]
+
+#Deafult rates for new and existing businesses
+new <- sum(illinois_sba$NewExist[illinois_sba$MIS_Status=="CHGOFF"]==2, na.rm=TRUE)/sum(illinois_sba$NewExist==2,na.rm=TRUE)
+existing <- sum(illinois_sba$NewExist[illinois_sba$MIS_Status=="CHGOFF"]==1, na.rm=TRUE)/sum(illinois_sba$NewExist==1,na.rm=TRUE)
+
+#Default rates for franchised and non-franchised businesses
+no_franchise <- sum(illinois_sba$FranchiseCode[illinois_sba$MIS_Status=="CHGOFF"]==0, illinois_sba$FranchiseCode[illinois_sba$MIS_Status=="CHGOFF"]==1, na.rm=TRUE)/sum(illinois_sba$FranchiseCode==0,illinois_sba$FranchiseCode==0,na.rm=TRUE)
+franchise <-  (sum(illinois_sba$MIS_Status=="CHGOFF", na.rm = TRUE) - sum(illinois_sba$FranchiseCode[illinois_sba$MIS_Status=="CHGOFF"]==0, illinois_sba$FranchiseCode[illinois_sba$MIS_Status=="CHGOFF"]==1, na.rm=TRUE))/(dim(illinois_sba)[1] - sum(illinois_sba$FranchiseCode==0, illinois_sba$FranchiseCode==1, na.rm=TRUE))
+
+#Deafult rates for urban and rural businesses, small rural
+rural <- sum(illinois_sba$UrbanRural[illinois_sba$MIS_Status=="CHGOFF"]==2, na.rm=TRUE)/sum(illinois_sba$UrbanRural==2,na.rm=TRUE)
+urban <- sum(illinois_sba$UrbanRural[illinois_sba$MIS_Status=="CHGOFF"]==1, na.rm=TRUE)/sum(illinois_sba$UrbanRural==1,na.rm=TRUE)
+
+#Default rates for with and without revolving line of credit
+no_rev_credit <- sum(illinois_sba$RevLineCr[illinois_sba$MIS_Status=="CHGOFF"]=="N", na.rm=TRUE)/sum(illinois_sba$RevLineCr=="N",na.rm=TRUE)
+rev_credit <- sum(illinois_sba$RevLineCr[illinois_sba$MIS_Status=="CHGOFF"]=="Y", na.rm=TRUE)/sum(illinois_sba$RevLineCr=="Y",na.rm=TRUE)
+
+#Default rate for no approval difference between gross and sba approval, small smaple for no difference
+no_approval_diff <- sum(subset(illinois_sba, approval_difference == 0)$MIS_Status=="CHGOFF",na.rm=TRUE)/dim(subset(illinois_sba, approval_difference == 0))[1]
+approval_diff <- sum(subset(illinois_sba, approval_difference > 0)$MIS_Status=="CHGOFF",na.rm=TRUE)/dim(subset(illinois_sba, approval_difference > 0))[1]
+```
+
+```{r}
+bank_state <- c("Bank in State", round(abs(bank_not_in_state - bank_in_state), 3)); bank_state
+emps <- c("Number of Employees", round(abs(emps_small - emps_larger), 3)); emps
+business_age <- c("New vs. Existing", round(abs(new - existing), 3)); business_age
+franchised <- c("Franchise", round(abs(no_franchise - franchise), 3)); franchised
+location <- c("Urban or Rural", round(abs(rural - urban), 3)); location
+credit_line <- c("Revoloving Line of Credit", round(abs(no_rev_credit - rev_credit), 3)); credit_line
+approval_d <- c("Approval Difference", round(abs(approval_diff - no_approval_diff), 3)); approval_d
+```
+
+
+```{r}
+category <- c(rep("Bank in State", 2), rep("Franchise", 2), rep("Approval Difference \n (Gross - SBA) = 0", 2))
+rates <- round(c(bank_not_in_state, bank_in_state, no_franchise, franchise, no_approval_diff, approval_diff) * 100, 2)
+type <- rep(c("No", "Yes"), 3)
+label_rates <- paste(trimws(as.character(rates)), "%")
+default_rate_data <- data.frame(category, type, rates, label_rates)
+```
+
+
+```{r}
+ggplot(data = default_rate_data, aes(fill = `type`, x = `category`, y = `rates`)) + 
+  theme(plot.title = element_text(hjust=0.5), legend.title = element_blank(), plot.caption = element_text(hjust = 1), panel.background = element_rect(fill = "white"), axis.title.x = element_blank(), axis.text.x = element_blank(), axis.text.y = element_text(color = "black", size = 10), axis.ticks = element_blank()) +
+  geom_bar(stat = "identity", position = "dodge", width = .75) + 
+  ylim(0,38) +
+  geom_text(aes(x = `category`, y = `rates`, label = `label_rates`),  position = position_dodge(width = .5), hjust = -0.15) +
+  scale_fill_manual(values = c("dark red", "dark green"), guide = guide_legend(reverse = TRUE)) + 
+  geom_hline(yintercept = 22.61, linetype = 2) +
+  labs(title = "\nIllinois Small Businesses \n SBA Loans 1970 - 2014 \nTop 3 Default Rate Change Factors \n", x = NULL, caption = "- - - *Illinois SBA Loan Default Rate: 22.61%") +
+  coord_flip()
+```
+
+```{r}
+ggsave("IL_SBA_Default_Facotrs_Plot.png", plot = last_plot(), device = "png", height = 6, width = 10)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
